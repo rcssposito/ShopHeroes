@@ -45,9 +45,11 @@ export default async function BuildPage({
     .from("items")
     .select(`
       *,
-      skills(*)
+      item_types (name),
+      skills (*)
     `)
-    .order("name");
+    .order("item_type_id", { ascending: true })
+    .order("level", { ascending: false });
 
   // Fetch user ownership
   const { data: userItems } = user ? await supabase.from("user_items").select("item_id").eq("user_id", user.id) : { data: [] };

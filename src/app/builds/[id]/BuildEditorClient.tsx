@@ -243,7 +243,7 @@ export default function BuildEditorClient({
       { label: 'Artefato Total', value: artefatoTotal, max: 300 },
       { label: 'Velocista',      value: velocista,     max: 100 },
       { label: 'Reviver',        value: reviver,       max: 100 },
-      { label: 'Suporte',        value: suporte,       max: 18  },
+      { label: 'Suporte',        value: suporte,       max: maxSlots === 6 ? 18 : maxSlots === 5 ? 15 : 12  },
     ];
   }, [slots, heroes, items, skills, maxSlots]);
 
@@ -453,6 +453,12 @@ export default function BuildEditorClient({
                             (hit: any) => hit.item_type_id === i.item_type_id
                           );
                           return isCorrectSlot && isOwnedFilter && isAllowedByType;
+                        })
+                        .sort((a: any, b: any) => {
+                          const nameA = a.item_types?.name || '';
+                          const nameB = b.item_types?.name || '';
+                          if (nameA !== nameB) return nameA.localeCompare(nameB);
+                          return (b.level || 0) - (a.level || 0);
                         })
                         .map(i => (
                           <option key={i.id} value={i.id}>
