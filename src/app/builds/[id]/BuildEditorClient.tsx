@@ -458,7 +458,7 @@ export default function BuildEditorClient({
                           const nameA = a.item_types?.name || '';
                           const nameB = b.item_types?.name || '';
                           if (nameA !== nameB) return nameA.localeCompare(nameB);
-                          return (b.level || 0) - (a.level || 0);
+                          return (a.level || 0) - (b.level || 0);
                         })
                         .map(i => (
                           <option key={i.id} value={i.id}>
