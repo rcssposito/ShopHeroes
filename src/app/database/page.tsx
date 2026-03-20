@@ -10,10 +10,10 @@ export default async function DatabasePage({
   const filterType = typeof resolvedParams.type === 'string' ? resolvedParams.type : null;
   const searchQuery = typeof resolvedParams.q === 'string' ? resolvedParams.q : null;
 
-  let query = supabase.from("items").select("*").order("name");
+  let query = supabase.from("items").select("*, skills(name)").order("name");
 
   if (filterType) {
-    query = query.eq("type", filterType);
+    query = query.eq("slot_type", filterType);
   }
   if (searchQuery) {
     query = query.ilike("name", `%${searchQuery}%`);
@@ -34,7 +34,7 @@ export default async function DatabasePage({
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent mb-2">Banco de Dados</h1>
           <p className="text-slate-400">Consulte todos os equipamentos, níveis e efeitos disponíveis no jogo.</p>
         </div>
-        
+
         {/* Simple Filter UI Note: In a real app we'd use client-side router navigation, keeping this simple server-side for now */}
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-sm font-medium text-slate-400 mr-2 border border-white/10 rounded-lg px-4 py-2 bg-secondary/30">
@@ -65,19 +65,19 @@ export default async function DatabasePage({
                 </td>
                 <td className="px-6 py-4">
                   <span className="px-2.5 py-1 bg-white/5 border border-white/10 rounded-md text-xs font-medium text-slate-300 group-hover:text-primary transition-colors">
-                    {item.type}
+                    {item.slot_type}
                   </span>
                 </td>
                 <td className="px-6 py-4">
-                   <span className="font-bold text-primary">
-                      {item.power > 0 ? `+${item.power}` : '-'}
-                   </span>
+                  <span className="font-bold text-primary">
+                    {item.power > 0 ? `+${item.power}` : '-'}
+                  </span>
                 </td>
                 <td className="px-6 py-4">
-                  {item.skill_name ? (
+                  {item.skills?.name ? (
                     <span className="px-3 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 shadow-[0_0_10px_rgba(168,85,247,0.1)]">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                      {item.skill_name}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+                      {item.skills?.name}
                     </span>
                   ) : (
                     <span className="text-slate-600 italic">-</span>
@@ -88,11 +88,11 @@ export default async function DatabasePage({
                 </td>
               </tr>
             ))}
-            
+
             {(!items || items.length === 0) && (
               <tr>
                 <td colSpan={5} className="px-6 py-12 text-center text-slate-500 bg-secondary/10">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 mx-auto mb-4 opacity-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 mx-auto mb-4 opacity-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                   Nenhum equipamento cadastrado ainda ou nenhum resultado para o filtro.
                 </td>
               </tr>
