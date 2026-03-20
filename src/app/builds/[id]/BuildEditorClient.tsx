@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { Hero, Item, Build, Skill } from '@/types/database';
 import { createClient } from '@/utils/supabase/client';
+import { generateBestBuild } from '@/utils/generator';
 
 interface BuildEditorClientProps {
   build: Build;
@@ -104,6 +105,7 @@ export default function BuildEditorClient({
   const [slots, setSlots] = useState<any[]>(initialSlots);
   const [selectedHeroIndex, setSelectedHeroIndex] = useState(0);
   const [onlyOwned, setOnlyOwned] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const isOwner = !!(build.user_id && userId === build.user_id);
 
@@ -122,12 +124,23 @@ export default function BuildEditorClient({
      return slot ? heroes.find(h => h.id === slot.hero_id) : null;
   };
 
+  // Dynamic slot limit based on Leader (Slot 0)
+  const maxSlots = useMemo(() => {
+    const leader = getHeroForIndex(0);
+    if (!leader) return 4;
+
+    const leaderSkills = leader.hero_skills?.map((hs: any) => hs.skills?.name) || [];
+    if (leaderSkills.includes('Líder 2')) return 6;
+    if (leaderSkills.includes('Líder 1')) return 5;
+    return 4;
+  }, [slots, heroes, skills]);
+
   // Stats calculation — count per skill, total bonus = count * skill.value
   const projectStats = useMemo(() => {
     const counts: Record<string, number> = {};
+    const activeIndices = Array.from({ length: maxSlots }, (_, i) => i);
 
-    const indices = [0, 1, 2, 3, 4, 5];
-    indices.forEach(idx => {
+    activeIndices.forEach(idx => {
        const hero = getHeroForIndex(idx);
        if (!hero) return;
 
@@ -179,7 +192,7 @@ export default function BuildEditorClient({
         total: data.total,
       }))
       .sort((a, b) => b.total - a.total || b.count - a.count);
-  }, [slots, heroes, items, skills]);
+  }, [slots, heroes, items, skills, maxSlots]);
 
   // Radar chart data — 5 axes exactly as in the spreadsheet
   const radarData = useMemo(() => {
@@ -192,7 +205,9 @@ export default function BuildEditorClient({
     const equipCounts: Record<string, number> = {};
     const heroCounts:  Record<string, number> = {};
 
-    [0, 1, 2, 3, 4, 5].forEach(idx => {
+    const activeIndices = Array.from({ length: maxSlots }, (_, i) => i);
+
+    activeIndices.forEach(idx => {
       const hero = getHeroForIndex(idx);
       if (!hero) return;
 
@@ -214,7 +229,6 @@ export default function BuildEditorClient({
     const sumBonus = (counts: Record<string, number>, keywords: string[]) =>
       keywords.reduce((acc, k) => acc + (counts[k] || 0) * getSkillValue(k), 0);
 
-    const artefatoExtra = sumBonus(equipCounts, artifactKeywords);
     const velocista     = sumBonus({ ...equipCounts, ...Object.fromEntries(Object.entries(heroCounts).map(([k,v]) => [k, (equipCounts[k]||0)+v])) }, velocitaKeywords);
     const reviver       = sumBonus({ ...equipCounts, ...Object.fromEntries(Object.entries(heroCounts).map(([k,v]) => [k, (equipCounts[k]||0)+v])) }, reviverKeywords);
     const suporte       = sumBonus({ ...equipCounts, ...Object.fromEntries(Object.entries(heroCounts).map(([k,v]) => [k, (equipCounts[k]||0)+v])) }, suporteKeywords);
@@ -231,7 +245,7 @@ export default function BuildEditorClient({
       { label: 'Reviver',        value: reviver,       max: 100 },
       { label: 'Suporte',        value: suporte,       max: 18  },
     ];
-  }, [slots, heroes, items, skills]);
+  }, [slots, heroes, items, skills, maxSlots]);
 
   const updateName = async (newName: string) => {
     setBuild({ ...build, name: newName });
@@ -280,6 +294,42 @@ export default function BuildEditorClient({
     }
   };
 
+  const handleAutoGenerate = async () => {
+    if (!isOwner || isGenerating) return;
+    setIsGenerating(true);
+    
+    try {
+      const ownedIds = new Set(items.filter(i => i.is_owned).map(i => i.id));
+      const newSlots = generateBestBuild(heroes, items, skills, ownedIds);
+      
+      // 1. Clear existing slots in DB
+      await supabase.from('build_slots').delete().eq('build_id', build.id);
+      
+      // 2. Insert new slots (Bulk)
+      const slotsToInsert = newSlots.map(s => ({
+        ...s,
+        build_id: build.id
+      }));
+      
+      const { data, error } = await supabase
+        .from('build_slots')
+        .insert(slotsToInsert)
+        .select();
+        
+      if (error) throw error;
+      
+      // 3. Update local state
+      setSlots(data || []);
+      setSelectedHeroIndex(0); // Reset view to leader
+      
+    } catch (err) {
+      console.error('Falha ao gerar build:', err);
+      alert('Ocorreu um erro ao gerar a build automática.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const currentHero = getHeroForIndex(selectedHeroIndex);
 
   return (
@@ -288,27 +338,39 @@ export default function BuildEditorClient({
         <div className="flex-1 space-y-12">
           {/* Hero Selection Grid */}
           <div className="bg-[#161616] border border-[#393939] p-8">
-            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[#a8a8a8] mb-8">Composição da Equipe (6 Slots)</h3>
+            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[#a8a8a8] mb-8">Composição da Equipe (4-6 Slots)</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               {[0, 1, 2, 3, 4, 5].map((idx) => {
                 const h = getHeroForIndex(idx);
+                const isLocked = idx >= maxSlots;
+
                 return (
                   <button
                     key={idx}
-                    onClick={() => setSelectedHeroIndex(idx)}
-                    className={`aspect-square border-2 flex flex-col items-center justify-center p-2 transition-all ${
-                      selectedHeroIndex === idx 
+                    onClick={() => !isLocked && setSelectedHeroIndex(idx)}
+                    disabled={isLocked}
+                    className={`aspect-square border-2 flex flex-col items-center justify-center p-2 transition-all relative ${
+                      isLocked 
+                      ? 'border-[#262626] bg-[#161616] cursor-not-allowed opacity-40' 
+                      : selectedHeroIndex === idx 
                       ? 'border-[#3d5afe] bg-[#3d5afe]/10' 
                       : 'border-[#393939] bg-black hover:border-[#525252]'
                     }`}
                   >
+                    {isLocked && (
+                       <div className="absolute inset-0 flex items-center justify-center">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#393939" strokeWidth="3"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                       </div>
+                    )}
                     {h ? (
                       <>
                         <div className="text-white font-bold text-sm uppercase text-center line-clamp-2">{h.name}</div>
                         <div className="text-[8px] font-black text-[#525252] mt-1">SLOT {idx + 1}</div>
                       </>
                     ) : (
-                      <span className="text-[#393939] font-black text-[10px] tracking-widest">VAZIO</span>
+                      <span className={`font-black text-[10px] tracking-widest ${isLocked ? 'text-[#262626]' : 'text-[#393939]'}`}>
+                        {isLocked ? 'BLOQUEADO' : 'VAZIO'}
+                      </span>
                     )}
                   </button>
                 );
@@ -383,7 +445,6 @@ export default function BuildEditorClient({
                       <option value="">{!currentHero ? 'SELECIONE UM HERÓI' : item ? '-- TROCAR --' : `EQUIPAR ${slotName.toUpperCase()}`}</option>
                       {currentHero && items
                         .filter(i => {
-                          // Both Acessório 1 and 2 slots share slot_type='Acessório' in the DB
                           const isCorrectSlot = slotName.startsWith('Acessório')
                             ? i.slot_type === 'Acessório'
                             : i.slot_type === slotName;
@@ -428,11 +489,34 @@ export default function BuildEditorClient({
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-white border-b border-[#393939] pb-6">Sumário da Equipe</h3>
               
               {/* Filter by inventory */}
-              <div className="p-5 bg-black border border-[#393939]">
+              <div className="p-5 bg-black border border-[#393939] space-y-4">
                  <label className="flex items-center gap-4 cursor-pointer">
                     <input type="checkbox" checked={onlyOwned} onChange={(e) => setOnlyOwned(e.target.checked)} className="w-5 h-5 border-[#393939] bg-[#161616] text-[#3d5afe] focus:ring-0 rounded-none"/>
                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#a8a8a8]">Filtrar por Inventário</span>
                  </label>
+                 
+                 {isOwner && (
+                   <button 
+                    onClick={handleAutoGenerate}
+                    disabled={isGenerating}
+                    className="w-full bg-[#3d5afe] hover:bg-white hover:text-black py-4 text-[10px] font-black tracking-[0.2em] uppercase transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                   >
+                     {isGenerating ? (
+                       <>
+                         <svg className="animate-spin h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                         </svg>
+                         GERANDO...
+                       </>
+                     ) : (
+                       <>
+                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                         OTIMIZAR BUILD
+                       </>
+                     )}
+                   </button>
+                 )}
               </div>
 
               {/* Radar Chart */}
@@ -452,8 +536,7 @@ export default function BuildEditorClient({
                   {projectStats.length === 0 && (
                     <p className="text-[#525252] text-xs text-center py-8">Nenhum bônus ativo</p>
                   )}
-                  {projectStats.map(({ name, count, value, total }) => {
-                    // Velocista and Reviver are capped at 100 by the game engine
+                  {projectStats.map(({ name, count, total }) => {
                     const cappedSkills = ['Velocista 1','Velocista 2','Velocista 3','Reviver 1','Reviver 2','Reviver 3'];
                     const isOverCap = cappedSkills.some(s => name.startsWith(s.split(' ')[0])) && total > 100;
                     return (
