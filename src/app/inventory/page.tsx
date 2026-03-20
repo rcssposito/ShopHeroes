@@ -30,7 +30,8 @@ export default async function DatabasePage({
     *,
     item_types (name),
     skills (name, value, description)
-  `).order("level", { ascending: false });
+  `).order("item_type_id", { ascending: true })
+    .order("level", { ascending: false });
 
   if (filterSlot)  query = query.eq("slot_type", filterSlot);
   if (filterType)  query = query.eq("item_type_id", filterType);
@@ -44,10 +45,18 @@ export default async function DatabasePage({
     is_owned: ownedItemIds.has(item.id)
   }));
 
-  // Client-side skill filter (join filter on nested field not directly supported)
+  // Robust sort: by Item Type Name, then by Level (desc)
+  const sortedItems = items?.sort((a: any, b: any) => {
+    const typeA = a.item_types?.name || '';
+    const typeB = b.item_types?.name || '';
+    if (typeA !== typeB) return typeA.localeCompare(typeB);
+    return (b.level || 0) - (a.level || 0);
+  });
+
+  // Client-side skill filter
   const filteredItems = filterSkill
-    ? items?.filter((item: any) => item.skills?.name === filterSkill)
-    : items;
+    ? sortedItems?.filter((item: any) => item.skills?.name === filterSkill)
+    : sortedItems;
 
   const rarityStyle = (rarity: string) => {
     switch(rarity) {
