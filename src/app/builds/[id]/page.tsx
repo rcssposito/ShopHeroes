@@ -69,6 +69,17 @@ export default async function BuildPage({
     .select("*")
     .eq("build_id", build.id);
 
+  // Fetch ALL slots for this user across ALL builds to check for hero overlaps
+  const { data: allUserSlots } = user ? await supabase
+    .from("build_slots")
+    .select("hero_id, builds!inner(id, name, user_id)")
+    .eq("builds.user_id", user.id)
+    .not("hero_id", "is", null) : { data: [] };
+
+  const usedHeroIds = (allUserSlots || [])
+    .filter((s: any) => s.builds.id !== build.id)
+    .map((s: any) => s.hero_id);
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between border-b border-white/10 pb-6 mb-2">
@@ -87,6 +98,7 @@ export default async function BuildPage({
         skills={skills || []}
         initialSlots={slots || []} 
         userId={user?.id}
+        usedHeroIds={usedHeroIds}
       />
     </div>
   );

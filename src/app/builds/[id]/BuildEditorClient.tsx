@@ -12,6 +12,7 @@ interface BuildEditorClientProps {
   skills: Skill[];
   initialSlots: any[];
   userId?: string;
+  usedHeroIds?: string[];
 }
 
 const SLOT_NAMES = ['Arma', 'Peito', 'Cabeça', 'Mãos', 'Pés', 'Acessório 1', 'Acessório 2'];
@@ -98,7 +99,8 @@ export default function BuildEditorClient({
   items,
   skills,
   initialSlots,
-  userId
+  userId,
+  usedHeroIds = []
 }: BuildEditorClientProps) {
   const supabase = createClient();
   const [build, setBuild] = useState<Build>(propBuild);
@@ -127,13 +129,26 @@ export default function BuildEditorClient({
   // Dynamic slot limit based on Leader (Slot 0)
   const maxSlots = useMemo(() => {
     const leader = getHeroForIndex(0);
-    if (!leader) return 4;
+    if (!leader) return 5; // User confirmed 5 is standard
 
-    const leaderSkills = leader.hero_skills?.map((hs: any) => hs.skills?.name) || [];
-    if (leaderSkills.includes('Líder 2')) return 6;
-    if (leaderSkills.includes('Líder 1')) return 5;
-    return 4;
-  }, [slots, heroes, skills]);
+    // Get skills from Hero Passives
+    const innateSkills = leader.hero_skills?.map((hs: any) => hs.skills?.name) || [];
+    
+    // Get skills from Leader's Equipment
+    const equipSkills = slots
+      .filter(s => s.hero_index === 0 && s.item_id)
+      .map(s => {
+        const item = items.find(i => i.id === s.item_id);
+        return item?.skills?.name;
+      })
+      .filter(Boolean);
+
+    const allLeaderSkills = [...innateSkills, ...equipSkills];
+
+    if (allLeaderSkills.includes('Líder 2')) return 7; // 5 + 2
+    if (allLeaderSkills.includes('Líder 1')) return 6; // 5 + 1
+    return 5;
+  }, [slots, heroes, items, skills]);
 
   // Stats calculation — count per skill, total bonus = count * skill.value
   const projectStats = useMemo(() => {
@@ -198,7 +213,7 @@ export default function BuildEditorClient({
   const radarData = useMemo(() => {
     const artifactKeywords = ['Encontrar mágica', 'Detectar segredo'];
     const velocitaKeywords = ['Velocista 1', 'Velocista 2', 'Velocista 3'];
-    const reviverKeywords  = ['Reviver 1', 'Reviver 2', 'Reviver 3'];
+    const reviveKeywords  = ['Reviver 1', 'Reviver 2', 'Reviver 3'];
     const suporteKeywords  = ['Suporte 1', 'Suporte 2', 'Suporte 3', 'Engenhoso 1', 'Engenhoso 2', 'Engenhoso 3'];
 
     // Separate equipment-only counts from hero passive counts
@@ -230,7 +245,7 @@ export default function BuildEditorClient({
       keywords.reduce((acc, k) => acc + (counts[k] || 0) * getSkillValue(k), 0);
 
     const velocista     = sumBonus({ ...equipCounts, ...Object.fromEntries(Object.entries(heroCounts).map(([k,v]) => [k, (equipCounts[k]||0)+v])) }, velocitaKeywords);
-    const reviver       = sumBonus({ ...equipCounts, ...Object.fromEntries(Object.entries(heroCounts).map(([k,v]) => [k, (equipCounts[k]||0)+v])) }, reviverKeywords);
+    const revive       = sumBonus({ ...equipCounts, ...Object.fromEntries(Object.entries(heroCounts).map(([k,v]) => [k, (equipCounts[k]||0)+v])) }, reviveKeywords);
     const suporte       = sumBonus({ ...equipCounts, ...Object.fromEntries(Object.entries(heroCounts).map(([k,v]) => [k, (equipCounts[k]||0)+v])) }, suporteKeywords);
     const artefatoTotal = sumBonus(
       Object.fromEntries(
@@ -242,8 +257,8 @@ export default function BuildEditorClient({
     return [
       { label: 'Artefato Total', value: artefatoTotal, max: 300 },
       { label: 'Velocista',      value: velocista,     max: 100 },
-      { label: 'Reviver',        value: reviver,       max: 100 },
-      { label: 'Suporte',        value: suporte,       max: maxSlots === 6 ? 18 : maxSlots === 5 ? 15 : 12  },
+      { label: 'Reviver',        value: revive,       max: 100 },
+      { label: 'Suporte',        value: suporte,       max: 18  },
     ];
   }, [slots, heroes, items, skills, maxSlots]);
 
@@ -339,10 +354,11 @@ export default function BuildEditorClient({
           {/* Hero Selection Grid */}
           <div className="bg-[#161616] border border-[#393939] p-8">
             <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[#a8a8a8] mb-8">Composição da Equipe (4-6 Slots)</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {[0, 1, 2, 3, 4, 5].map((idx) => {
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+              {[0, 1, 2, 3, 4, 5, 6].map((idx) => {
                 const h = getHeroForIndex(idx);
                 const isLocked = idx >= maxSlots;
+                const isAlreadyUsed = h && usedHeroIds.includes(h.id);
 
                 return (
                   <button
@@ -354,6 +370,8 @@ export default function BuildEditorClient({
                       ? 'border-[#262626] bg-[#161616] cursor-not-allowed opacity-40' 
                       : selectedHeroIndex === idx 
                       ? 'border-[#3d5afe] bg-[#3d5afe]/10' 
+                      : isAlreadyUsed
+                      ? 'border-yellow-600/50 bg-yellow-900/10'
                       : 'border-[#393939] bg-black hover:border-[#525252]'
                     }`}
                   >
@@ -361,6 +379,11 @@ export default function BuildEditorClient({
                        <div className="absolute inset-0 flex items-center justify-center">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#393939" strokeWidth="3"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                        </div>
+                    )}
+                    {isAlreadyUsed && !isLocked && (
+                      <div className="absolute top-1 right-1" title="Em uso em outro time">
+                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      </div>
                     )}
                     {h ? (
                       <>
@@ -409,19 +432,26 @@ export default function BuildEditorClient({
                </div>
                
                <select 
-                 className="bg-black border border-[#393939] px-6 py-3 text-xs font-black tracking-widest text-white focus:border-[#3d5afe] outline-none cursor-pointer uppercase h-14 min-w-[240px] disabled:opacity-50 disabled:cursor-not-allowed"
+                 className={`bg-black border border-[#393939] px-6 py-3 text-xs font-black tracking-widest text-white focus:border-[#3d5afe] outline-none cursor-pointer uppercase h-14 min-w-[240px] disabled:opacity-50 disabled:cursor-not-allowed ${
+                   currentHero && usedHeroIds.includes(currentHero.id) ? 'border-yellow-600/50' : ''
+                 }`}
                  value={currentHero?.id || ""}
                  onChange={(e) => updateHero(selectedHeroIndex, e.target.value || null)}
                  disabled={!isOwner}
                >
                  <option value="">-- SELECIONAR HERÓI --</option>
-                 {heroes.map(h => (
-                   <option key={h.id} value={h.id}>{h.name.toUpperCase()}</option>
-                 ))}
+                 {heroes.map(h => {
+                   const isUsed = usedHeroIds.includes(h.id);
+                   return (
+                     <option key={h.id} value={h.id}>
+                       {h.name.toUpperCase()} {isUsed ? ' (EM USO)' : ''}
+                     </option>
+                   );
+                 })}
                </select>
             </div>
 
-            {/* 7 Equipment Slots (Arma, Peito, Cabeça, Mãos, Pés, Acessório 1, Acessório 2) */}
+            {/* 7 Equipment Slots */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {SLOT_NAMES.map((slotName) => {
                 const slot = slots.find(s => s.hero_index === selectedHeroIndex && s.slot_type === slotName);
@@ -454,12 +484,7 @@ export default function BuildEditorClient({
                           );
                           return isCorrectSlot && isOwnedFilter && isAllowedByType;
                         })
-                        .sort((a: any, b: any) => {
-                          const nameA = a.item_types?.name || '';
-                          const nameB = b.item_types?.name || '';
-                          if (nameA !== nameB) return nameA.localeCompare(nameB);
-                          return (a.level || 0) - (b.level || 0);
-                        })
+                        .sort((a: any, b: any) => (a.level || 0) - (b.level || 0))
                         .map(i => (
                           <option key={i.id} value={i.id}>
                             Lvl {i.level} - {i.name.toUpperCase()}
@@ -543,8 +568,8 @@ export default function BuildEditorClient({
                     <p className="text-[#525252] text-xs text-center py-8">Nenhum bônus ativo</p>
                   )}
                   {projectStats.map(({ name, count, total }) => {
-                    const cappedSkills = ['Velocista 1','Velocista 2','Velocista 3','Reviver 1','Reviver 2','Reviver 3'];
-                    const isOverCap = cappedSkills.some(s => name.startsWith(s.split(' ')[0])) && total > 100;
+                    const cappedSkills = ['Velocista','Reviver'];
+                    const isOverCap = (name.includes('Velocista') || name.includes('Reviver')) && total > 100;
                     return (
                       <div
                         key={name}
