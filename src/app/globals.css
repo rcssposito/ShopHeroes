@@ -1,19 +1,58 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', system-ui, sans-serif;
   
-  --color-background: #0f172a; /* Slate 900 */
-  --color-foreground: #f8fafc; /* Slate 50 */
-  --color-primary: #3b82f6; /* Blue 500 */
-  --color-secondary: #1e293b; /* Slate 800 */
+  /* Carbon Design System - High Contrast Black & White */
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+  
+  --color-primary: #3d5afe; /* Strong Professional Blue */
+  --color-secondary: #161616; /* Dark Gray for components */
+  --color-accent: #f4f4f4; /* Light Gray for subtext */
+  
+  --color-border: #393939; /* IBM Carbon border style */
+  
+  /* Rarity Colors - Solid & High Contrast */
+  --color-mythic: #ff4d00;    
+  --color-legendary: #ffc107; 
+  --color-epic: #9c27b0;     
+  --color-flawless: #2196f3; 
+  --color-common: #888888;   
 }
 
 @layer base {
   body {
     background-color: var(--color-background);
-    color: var(--color-foreground);
+    color: #e0e0e0;
     @apply antialiased;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    color: #ffffff;
+    @apply font-bold;
+  }
+  
+  input, select, button {
+    @apply transition-all duration-150;
+  }
+}
+
+@layer utilities {
+  .carbon-card {
+    @apply bg-[#161616] border border-[#393939] shadow-none;
+  }
+  
+  .carbon-btn {
+    @apply bg-[#393939] hover:bg-[#474747] text-white px-4 py-2 text-sm font-medium transition-colors border-none;
+  }
+  
+  .carbon-btn-primary {
+    @apply bg-[#3d5afe] hover:bg-[#304ffe] text-white px-4 py-2 text-sm font-medium border-none;
+  }
+  
+  .text-sub {
+    @apply text-[#a8a8a8];
   }
 }

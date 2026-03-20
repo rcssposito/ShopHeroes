@@ -38,14 +38,16 @@ DROP TABLE IF EXISTS public.items CASCADE;
 -- 4. Create Entity Tables
 CREATE TABLE public.items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL,
+    name TEXT UNIQUE NOT NULL,
     item_type_id UUID REFERENCES public.item_types(id) ON DELETE SET NULL,
     slot_type TEXT NOT NULL, -- Arma, Peito, Cabeça, Mãos, Pés, Acessório
     level INTEGER DEFAULT 1,
     skill_id UUID REFERENCES public.skills(id) ON DELETE SET NULL,
     power INTEGER DEFAULT 0,
     rarity TEXT,
-    quality TEXT DEFAULT 'Normal'
+    quality TEXT DEFAULT 'Normal',
+    is_owned BOOLEAN DEFAULT FALSE,
+    where_to_get TEXT
 );
 
 CREATE TABLE public.hero_item_types (
@@ -97,7 +99,7 @@ INSERT INTO public.skills (name, value) VALUES
 ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value;
 
 -- 7. Population: ALL 28 Heroes and their Mappings
-DO $$
+DO $BODY$
 DECLARE
     h_id UUID;
     t_id UUID;
@@ -150,4 +152,8 @@ BEGIN
             INSERT INTO hero_item_types (hero_id, item_type_id) VALUES (h_id, t_id) ON CONFLICT DO NOTHING;
         END LOOP;
     END LOOP;
-END $$;
+END $BODY$;
+
+
+-- Finalize sequence or metadata
+

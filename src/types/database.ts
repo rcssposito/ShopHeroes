@@ -25,6 +25,8 @@ export interface Item {
   power: number;
   rarity: string | null;
   quality: string;
+  is_owned: boolean;
+  where_to_get: string | null;
   // Join properties
   skills?: Skill;
   item_types?: ItemType;
