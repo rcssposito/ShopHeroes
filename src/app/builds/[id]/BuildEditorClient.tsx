@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { Hero, Item, Build, Skill } from '@/types/database';
 import { createClient } from '@/utils/supabase/client';
 import { generateBestBuild } from '@/utils/generator';
+import { HERO_ACCESSORY_MAPPING } from '@/utils/accessory_mapping';
 
 interface BuildEditorClientProps {
   build: Build;
@@ -126,6 +127,51 @@ export default function BuildEditorClient({
      return slot ? heroes.find(h => h.id === slot.hero_id) : null;
   };
 
+  const getHeroStats = (heroId: string | undefined): { artifact: number, velocista: number, revive: number, suporte: number, energetico: number } => {
+    const stats = { artifact: 0, velocista: 0, revive: 0, suporte: 0, energetico: 0 };
+    if (!heroId) return stats;
+    const hero = heroes.find(h => h.id === heroId);
+    if (!hero) return stats;
+
+    const getSkillValue = (name: string) => skills.find(s => s.name === name)?.value || 0;
+
+    // Innate hero skills
+    const innateSkills = hero.hero_skills?.map((hs: any) => hs.skills) || [];
+    innateSkills.forEach((sk: any) => {
+      if (!sk) return;
+      const val = getSkillValue(sk.name);
+      if (['Encontrar mágica', 'Detectar segredo'].includes(sk.name)) stats.artifact += val;
+      if (['Velocista 1', 'Velocista 2', 'Velocista 3'].includes(sk.name)) stats.velocista += val;
+      if (['Reviver 1', 'Reviver 2', 'Reviver 3'].includes(sk.name)) stats.revive += val;
+      if (['Suporte 1', 'Suporte 2', 'Suporte 3', 'Engenhoso 1', 'Engenhoso 2', 'Engenhoso 3'].includes(sk.name)) stats.suporte += val;
+      if (['Energético 1', 'Energético 2', 'Energético 3'].includes(sk.name)) stats.energetico += val;
+    });
+
+    // Equipped items
+    const heroIdx = [0, 1, 2, 3, 4, 5].find(idx => {
+      const s = slots.find(sl => sl.hero_index === idx && sl.slot_type === 'Baseline');
+      return s?.hero_id === heroId;
+    });
+
+    if (heroIdx !== undefined) {
+      const heroSlots = slots.filter(s => s.hero_index === heroIdx && s.item_id);
+      heroSlots.forEach(s => {
+        const item = items.find(i => i.id === s.item_id);
+        const itemSkill = item?.skills;
+        if (itemSkill) {
+          const val = getSkillValue(itemSkill.name);
+          if (['Encontrar mágica', 'Detectar segredo'].includes(itemSkill.name)) stats.artifact += val;
+          if (['Velocista 1', 'Velocista 2', 'Velocista 3'].includes(itemSkill.name)) stats.velocista += val;
+          if (['Reviver 1', 'Reviver 2', 'Reviver 3'].includes(itemSkill.name)) stats.revive += val;
+          if (['Suporte 1', 'Suporte 2', 'Suporte 3', 'Engenhoso 1', 'Engenhoso 2', 'Engenhoso 3'].includes(itemSkill.name)) stats.suporte += val;
+          if (['Energético 1', 'Energético 2', 'Energético 3'].includes(itemSkill.name)) stats.energetico += val;
+        }
+      });
+    }
+
+    return stats;
+  };
+
   // Dynamic slot limit based on Leader (Slot 0)
   const maxSlots = useMemo(() => {
     const leader = getHeroForIndex(0);
@@ -145,8 +191,8 @@ export default function BuildEditorClient({
 
     const allLeaderSkills = [...innateSkills, ...equipSkills];
 
-    if (allLeaderSkills.includes('Líder 2')) return 7; // 5 + 2
-    if (allLeaderSkills.includes('Líder 1')) return 6; // 5 + 1
+    if (allLeaderSkills.includes('Líder 2')) return 6; // Cap is 6
+    if (allLeaderSkills.includes('Líder 1')) return 6; // Cap is 6
     return 5;
   }, [slots, heroes, items, skills]);
 
@@ -180,6 +226,8 @@ export default function BuildEditorClient({
     // Consolidate specific skills into single merged categories for the table display
     const mergedCounts: Record<string, { count: number, total: number }> = {};
     
+    const approvedCategories = ['Artefatos (Total)', 'Velocista 1', 'Velocista 2', 'Velocista 3', 'Reviver 1', 'Reviver 2', 'Reviver 3', 'Suporte 1', 'Suporte 2', 'Suporte 3', 'Energético (Equipe)', 'Líder 1', 'Líder 2'];
+
     Object.entries(counts).forEach(([name, count]) => {
       let categoryName = name;
       const val = count * getSkillValue(name);
@@ -192,11 +240,26 @@ export default function BuildEditorClient({
         categoryName = name.replace('Engenhoso', 'Suporte');
       }
 
-      if (!mergedCounts[categoryName]) {
-        mergedCounts[categoryName] = { count: 0, total: 0 };
+      if (['Energético 1', 'Energético 2', 'Energético 3'].includes(name)) {
+        categoryName = 'Energético (Equipe)';
       }
-      mergedCounts[categoryName].count += count;
-      mergedCounts[categoryName].total += val;
+
+      const approvedCategories = [
+        'Artefatos (Total)', 'Velocista 1', 'Velocista 2', 'Velocista 3', 
+        'Reviver 1', 'Reviver 2', 'Reviver 3', 
+        'Suporte 1', 'Suporte 2', 'Suporte 3', 
+        'Energético (Equipe)', 'Líder 1', 'Líder 2'
+      ];
+      
+      const isApproved = approvedCategories.includes(categoryName);
+
+      if (isApproved) {
+        if (!mergedCounts[categoryName]) {
+          mergedCounts[categoryName] = { count: 0, total: 0 };
+        }
+        mergedCounts[categoryName].count += count;
+        mergedCounts[categoryName].total += val;
+      }
     });
 
     return Object.entries(mergedCounts)
@@ -314,8 +377,14 @@ export default function BuildEditorClient({
     setIsGenerating(true);
     
     try {
+      // Get current hero IDs from slots to preserve them
+      const currentHeroIds = [0, 1, 2, 3, 4, 5].map(idx => {
+        const slot = slots.find(s => s.hero_index === idx && s.slot_type === 'Baseline');
+        return slot?.hero_id || null;
+      });
+
       const ownedIds = new Set(items.filter(i => i.is_owned).map(i => i.id));
-      const newSlots = generateBestBuild(heroes, items, skills, ownedIds);
+      const newSlots = generateBestBuild(heroes, items, skills, ownedIds, usedHeroIds, currentHeroIds);
       
       // 1. Clear existing slots in DB
       await supabase.from('build_slots').delete().eq('build_id', build.id);
@@ -353,9 +422,9 @@ export default function BuildEditorClient({
         <div className="flex-1 space-y-12">
           {/* Hero Selection Grid */}
           <div className="bg-[#161616] border border-[#393939] p-8">
-            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[#a8a8a8] mb-8">Composição da Equipe (4-6 Slots)</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-              {[0, 1, 2, 3, 4, 5, 6].map((idx) => {
+            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[#a8a8a8] mb-8">Composição da Equipe (5-6 Slots)</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {[0, 1, 2, 3, 4, 5].map((idx) => {
                 const h = getHeroForIndex(idx);
                 const isLocked = idx >= maxSlots;
                 const isAlreadyUsed = h && usedHeroIds.includes(h.id);
@@ -387,7 +456,17 @@ export default function BuildEditorClient({
                     )}
                     {h ? (
                       <>
-                        <div className="text-white font-bold text-sm uppercase text-center line-clamp-2">{h.name}</div>
+                        <div className="flex flex-col items-center">
+                          <span className="text-[14px] font-black text-white">{h.name}</span>
+                          <span className={`text-[10px] font-bold ${
+                            getHeroStats(h.id).energetico > 100 ? 'text-red-500 animate-pulse' : 
+                            getHeroStats(h.id).energetico === 100 ? 'text-green-500' : 
+                            'text-yellow-500'
+                          }`}>
+                            ⚡ {getHeroStats(h.id).energetico}% Energético
+                            {getHeroStats(h.id).energetico > 100 && <span className="ml-1 text-[7px] font-black underline">!CRÍTICO!</span>}
+                          </span>
+                        </div>
                         <div className="text-[8px] font-black text-[#525252] mt-1">SLOT {idx + 1}</div>
                       </>
                     ) : (
@@ -476,7 +555,7 @@ export default function BuildEditorClient({
                       {currentHero && items
                         .filter(i => {
                           const isCorrectSlot = slotName.startsWith('Acessório')
-                            ? i.slot_type === 'Acessório'
+                            ? (HERO_ACCESSORY_MAPPING[currentHero.name]?.[slotName as 'Acessório 1' | 'Acessório 2'] || []).includes(i.item_types?.name || '')
                             : i.slot_type === slotName;
                           const isOwnedFilter = !onlyOwned || i.is_owned;
                           const isAllowedByType = currentHero.hero_item_types?.some(
@@ -580,9 +659,13 @@ export default function BuildEditorClient({
                             : 'border-[#393939] hover:border-[#3d5afe]'
                         }`}
                       >
-                        <span className="col-span-6 text-[10px] font-bold text-white uppercase truncate flex items-center gap-1">
+                        <span className="col-span-6 text-[10px] font-bold text-white uppercase truncate flex items-center gap-2">
                           {name}
-                          {isOverCap && <span title="Limite de 100 excedido" className="text-red-500 text-[9px] font-black">⚠</span>}
+                          {isOverCap && (
+                            <span className="bg-red-600 text-white px-1.5 py-0.5 text-[7px] font-black rounded-sm animate-pulse">
+                              CRÍTICO {'>'}100
+                            </span>
+                          )}
                         </span>
                         <span className="col-span-2 text-[10px] font-black text-[#a8a8a8] text-center">{count}</span>
                         <span className={`col-span-4 text-[10px] font-black text-right ${
