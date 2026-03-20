@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Hero, Item, Build, Skill } from '@/types/database';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/utils/supabase/client';
 
 interface BuildEditorClientProps {
   build: Build;
@@ -10,6 +10,7 @@ interface BuildEditorClientProps {
   items: Item[];
   skills: Skill[];
   initialSlots: any[];
+  userId?: string;
 }
 
 const SLOT_NAMES = ['Arma', 'Peito', 'Cabeça', 'Mãos', 'Pés', 'Acessório 1', 'Acessório 2'];
@@ -95,12 +96,16 @@ export default function BuildEditorClient({
   heroes, 
   items,
   skills,
-  initialSlots
+  initialSlots,
+  userId
 }: BuildEditorClientProps) {
+  const supabase = createClient();
   const [build, setBuild] = useState<Build>(propBuild);
   const [slots, setSlots] = useState<any[]>(initialSlots);
   const [selectedHeroIndex, setSelectedHeroIndex] = useState(0);
   const [onlyOwned, setOnlyOwned] = useState(false);
+
+  const isOwner = !!(build.user_id && userId === build.user_id);
 
   const getDescription = (name: string) => {
     const skill = skills.find(s => s.name === name);
@@ -135,20 +140,43 @@ export default function BuildEditorClient({
 
        // 2. Equipment Skills for this hero
        const heroSlots = slots.filter(s => s.hero_index === idx && s.item_id);
-       heroSlots.forEach(slot => {
+        heroSlots.forEach(slot => {
           const item = items.find(i => i.id === slot.item_id);
           if (item?.skills?.name) {
-             counts[item.skills.name] = (counts[item.skills.name] || 0) + 1;
+             let skillName = item.skills.name;
+             counts[skillName] = (counts[skillName] || 0) + 1;
           }
        });
     });
 
-    return Object.entries(counts)
-      .map(([name, count]) => ({
+    // Consolidate specific skills into single merged categories for the table display
+    const mergedCounts: Record<string, { count: number, total: number }> = {};
+    
+    Object.entries(counts).forEach(([name, count]) => {
+      let categoryName = name;
+      const val = count * getSkillValue(name);
+      
+      if (['Encontrar mágica', 'Detectar segredo'].includes(name)) {
+        categoryName = 'Artefatos (Total)';
+      }
+
+      if (['Engenhoso 1', 'Engenhoso 2', 'Engenhoso 3'].includes(name)) {
+        categoryName = name.replace('Engenhoso', 'Suporte');
+      }
+
+      if (!mergedCounts[categoryName]) {
+        mergedCounts[categoryName] = { count: 0, total: 0 };
+      }
+      mergedCounts[categoryName].count += count;
+      mergedCounts[categoryName].total += val;
+    });
+
+    return Object.entries(mergedCounts)
+      .map(([name, data]) => ({
         name,
-        count,
-        value: getSkillValue(name),
-        total: count * getSkillValue(name),
+        count: data.count,
+        value: data.total / data.count, // average value
+        total: data.total,
       }))
       .sort((a, b) => b.total - a.total || b.count - a.count);
   }, [slots, heroes, items, skills]);
@@ -291,11 +319,12 @@ export default function BuildEditorClient({
           <div className="space-y-8">
             <div className="bg-[#161616] border border-[#393939] p-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                <div className="flex-1">
-                  <input 
-                    className="text-4xl font-bold text-white uppercase tracking-tight bg-transparent border-b border-transparent hover:border-[#393939] focus:border-[#3d5afe] outline-none w-full transition-all py-2"
+                   <input 
+                    className="text-4xl font-bold text-white uppercase tracking-tight bg-transparent border-b border-transparent hover:border-[#393939] focus:border-[#3d5afe] outline-none w-full transition-all py-2 disabled:opacity-80 disabled:hover:border-transparent"
                     value={build.name}
                     onChange={(e) => updateName(e.target.value)}
                     placeholder="NOME DO TIME"
+                    disabled={!isOwner}
                   />
                   <div className="flex gap-4 mt-2">
                      <span className="text-[10px] font-black tracking-widest text-[#525252] bg-black px-3 py-1 border border-[#393939]">
@@ -318,9 +347,10 @@ export default function BuildEditorClient({
                </div>
                
                <select 
-                 className="bg-black border border-[#393939] px-6 py-3 text-xs font-black tracking-widest text-white focus:border-[#3d5afe] outline-none cursor-pointer uppercase h-14 min-w-[240px]"
+                 className="bg-black border border-[#393939] px-6 py-3 text-xs font-black tracking-widest text-white focus:border-[#3d5afe] outline-none cursor-pointer uppercase h-14 min-w-[240px] disabled:opacity-50 disabled:cursor-not-allowed"
                  value={currentHero?.id || ""}
                  onChange={(e) => updateHero(selectedHeroIndex, e.target.value || null)}
+                 disabled={!isOwner}
                >
                  <option value="">-- SELECIONAR HERÓI --</option>
                  {heroes.map(h => (
@@ -343,12 +373,12 @@ export default function BuildEditorClient({
                     </div>
 
                     <select
-                      className={`w-full bg-black border px-5 py-4 text-xs font-bold transition-all outline-none cursor-pointer uppercase h-14 ${
+                      className={`w-full bg-black border px-5 py-4 text-xs font-bold transition-all outline-none cursor-pointer uppercase h-14 disabled:opacity-50 disabled:cursor-not-allowed ${
                         item ? 'border-[#393939] text-white' : 'border-dashed border-[#393939] text-[#393939] hover:border-white hover:text-white'
                       }`}
                       value={itemId || ""}
                       onChange={(e) => updateEquipment(selectedHeroIndex, slotName, e.target.value || null)}
-                      disabled={!currentHero}
+                      disabled={!isOwner || !currentHero}
                     >
                       <option value="">{!currentHero ? 'SELECIONE UM HERÓI' : item ? '-- TROCAR --' : `EQUIPAR ${slotName.toUpperCase()}`}</option>
                       {currentHero && items

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/utils/supabase/server";
 import BuildEditorClient from "./BuildEditorClient";
 
 export default async function BuildPage({
@@ -8,6 +8,9 @@ export default async function BuildPage({
 }) {
   const resolvedParams = await params;
   
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
   // Fetch build info
   const { data: build, error } = await supabase
     .from("builds")
@@ -38,13 +41,22 @@ export default async function BuildPage({
     .order("name");
   
   // Fetch all items with their related skill info
-  const { data: items } = await supabase
+  const { data: rawItems } = await supabase
     .from("items")
     .select(`
       *,
       skills(*)
     `)
     .order("name");
+
+  // Fetch user ownership
+  const { data: userItems } = user ? await supabase.from("user_items").select("item_id").eq("user_id", user.id) : { data: [] };
+  const ownedItemIds = new Set(userItems?.map((u: any) => u.item_id) || []);
+
+  const items = rawItems?.map((item: any) => ({
+    ...item,
+    is_owned: ownedItemIds.has(item.id)
+  }));
 
   // Fetch all skill coefficients
   const { data: skills } = await supabase.from("skills").select("*");
@@ -72,6 +84,7 @@ export default async function BuildPage({
         items={(items as any) || []} 
         skills={skills || []}
         initialSlots={slots || []} 
+        userId={user?.id}
       />
     </div>
   );

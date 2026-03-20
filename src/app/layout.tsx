@@ -1,5 +1,7 @@
 import { Inter, Outfit } from "next/font/google";
 import Link from "next/link";
+import { createClient } from "@/utils/supabase/server";
+import { signOut } from "@/app/login/actions";
 import "./globals.css";
 
 const inter = Inter({
@@ -17,11 +19,14 @@ export const metadata = {
   description: "Planejador de builds e equipamentos para Shop Heroes",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
   return (
     <html lang="pt-BR" className="bg-black">
       <body
@@ -36,7 +41,6 @@ export default function RootLayout({
             <nav className="hidden md:flex items-center gap-10">
               {[
                 { name: 'TIMES', href: '/' },
-                { name: 'DATABASE', href: '/database' },
                 { name: 'INVENTÁRIO', href: '/inventory' },
                 { name: 'SKILLS', href: '/skills' }
               ].map((link) => (
@@ -48,6 +52,18 @@ export default function RootLayout({
                   {link.name}
                 </Link>
               ))}
+              
+              {user ? (
+                <form action={signOut}>
+                  <button type="submit" className="text-xs font-black tracking-[0.2em] text-red-500 hover:text-red-400 transition-all underline-offset-8 hover:underline mt-1">
+                    SAIR
+                  </button>
+                </form>
+              ) : (
+                <Link href="/login" className="text-xs font-black tracking-[0.2em] text-[#3d5afe] hover:text-white transition-all underline-offset-8 hover:underline">
+                  ENTRAR
+                </Link>
+              )}
             </nav>
             
             <div className="md:hidden">

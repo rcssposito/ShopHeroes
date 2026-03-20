@@ -1,12 +1,16 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/utils/supabase/server";
 import { Build } from "@/types/database";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 
 export default async function Home() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
   const { data: builds, error } = await supabase
     .from("builds")
     .select("*")
+    .eq("user_id", user?.id)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -28,9 +32,17 @@ export default async function Home() {
         
         <form action={async () => {
           "use server";
+          const supabase = await createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+          
+          if (!user) return;
+
           const { data } = await supabase
             .from('builds')
-            .insert({ name: 'Novo Time' })
+            .insert({ 
+              name: 'Novo Time',
+              user_id: user.id
+            })
             .select()
             .single();
 
